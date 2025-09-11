@@ -1,94 +1,85 @@
-const Order = require("../models/orders.model");
-const jwt = require("jsonwebtoken");
-const path = require("path");
-const fs = require("fs");
+const { supabase } = require("../config/supabase");
+const db = require("../models");
+const Order = db.Order;
 
-// Upload order controller
-exports.uploadOrder = async (req, res) => {
+// 📌 Create a new order (with file upload to Supabase)
+exports.createOrder = async (req, res) => {
   try {
-    
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
-    }
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return res.status(401).json({ message: "Authorization header missing" });
+    if (!req.files || !req.files.file) {
+      return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const token = authHeader.split(" ")[1];
-    if (!token) {
-      return res.status(401).json({ message: "Token missing" });
+    const file = req.files.file;
+    const fileName = `${Date.now()}_${file.name}`;
+
+    // Upload file to Supabase storage
+    const { data, error } = await supabase.storage
+      .from("documents") // bucket name
+      .upload(fileName, file.data, {
+        contentType: file.mimetype,
+      });
+
+    if (error) {
+      console.error("Supabase upload error:", error);
+      return res.status(500).json({ error: "File upload failed" });
     }
 
-    
-    let decoded;
-    try {
-      decoded = jwt.verify(token, "your_secret_key");
-    } catch (err) {
-      return res.status(401).json({ message: "Invalid token" });
-    }
+    const fileUrl = `${process.env.SUPABASE_URL}/storage/v1/object/public/documents/${fileName}`;
 
-    const userId = decoded.id;
-
-    // Save order details to DB
-    const { copies, type, binding_type, delivery_address } = req.body;
-    const fileName = req.file.filename;
-
-    const order = await Order.create({
-      user_id: userId,
-      file_name: fileName,
-      copies: copies,
-      color_type: type,
-      binding_type: binding_type || 'none',
-      payment_method: 'cash_on_delivery',
-      delivery_address: delivery_address,
+    // Save order in DB
+    const newOrder = await Order.create({
+      fileUrl,
+      status: "pending",
     });
 
-    res.status(201).json({ message: "Order placed successfully", order });
-  } catch (error) {
-    console.error("❌ Upload order error:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(201).json(newOrder);
+  } catch (err) {
+    console.error("❌ createOrder error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
-// Print document controller
-exports.printDocument = async (req, res) => {
+// 📌 Get all orders
+exports.getOrders = async (req, res) => {
   try {
-    const { orderId } = req.params;
+    const orders = await Order.findAll();
+    res.json(orders);
+  } catch (err) {
+    console.error("❌ getOrders error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
 
-    // Get token from header
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return res.status(401).json({ message: "Authorization header missing" });
-    }
+// 📌 Print order (update status)
+exports.printOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await Order.findByPk(id);
 
-    const token = authHeader.split(" ")[1];
-    if (!token) {
-      return res.status(401).json({ message: "Token missing" });
-    }
+    if (!order) return res.status(404).json({ error: "Order not found" });
 
-    // Verify token
-    let decoded;
-    try {
-      decoded = jwt.verify(token, "your_secret_key");
-    } catch (err) {
-      return res.status(401).json({ message: "Invalid token" });
-    }
+    order.status = "printed";
+    await order.save();
 
-    const userId = decoded.id;
+    res.json(order);
+  } catch (err) {
+    console.error("❌ printOrder error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
 
-    // Find the order
-    const order = await Order.findOne({ where: { id: orderId, user_id: userId } });
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
+// 📌 Delete order
+exports.deleteOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await Order.findByPk(id);
 
-    // Simulate printing (in real app, integrate with printer API)
-    console.log(`Printing document: ${order.file_name} for order ${orderId}`);
+    if (!order) return res.status(404).json({ error: "Order not found" });
 
-    res.status(200).json({ message: "Document sent to printer" });
-  } catch (error) {
-    console.error("❌ Print document error:", error);
-    res.status(500).json({ message: "Server error" });
+    await order.destroy();
+    res.json({ message: "Order deleted successfully" });
+  } catch (err) {
+    console.error("❌ deleteOrder error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };

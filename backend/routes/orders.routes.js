@@ -1,25 +1,17 @@
 const express = require("express");
 const router = express.Router();
-const multer = require("multer");
-const path = require("path");
 const ordersController = require("../controllers/orders.controller");
 
-// Multer setup for file storage
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
-const upload = multer({ storage: storage });
+// Upload & create new order
+router.post("/upload", ordersController.createOrder);
 
-// Upload order route with authentication and file upload
-router.post("/upload", upload.single("file"), ordersController.uploadOrder);
+// Get all orders
+router.get("/", ordersController.getOrders);
 
-// Print document route
-router.post("/print/:orderId", ordersController.printDocument);
+// Print order by ID
+router.post("/print/:id", ordersController.printOrder);
+
+// Delete order by ID
+router.delete("/:id", ordersController.deleteOrder);
 
 module.exports = router;
