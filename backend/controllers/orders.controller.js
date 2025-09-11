@@ -2,33 +2,21 @@ const { supabase } = require("../config/supabase");
 const db = require("../models");
 const Order = db.Order;
 
-// 📌 Create a new order (with file upload to Supabase)
+// 📌 Create a new order
 exports.createOrder = async (req, res) => {
   try {
-    if (!req.files || !req.files.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+    const { file_url, file_name, copies, color } = req.body;
+
+    if (!file_url || !file_name) {
+      return res.status(400).json({ error: "File URL and name are required" });
     }
-
-    const file = req.files.file;
-    const fileName = `${Date.now()}_${file.name}`;
-
-    // Upload file to Supabase storage
-    const { data, error } = await supabase.storage
-      .from("documents") // bucket name
-      .upload(fileName, file.data, {
-        contentType: file.mimetype,
-      });
-
-    if (error) {
-      console.error("Supabase upload error:", error);
-      return res.status(500).json({ error: "File upload failed" });
-    }
-
-    const fileUrl = `${process.env.SUPABASE_URL}/storage/v1/object/public/documents/${fileName}`;
 
     // Save order in DB
     const newOrder = await Order.create({
-      fileUrl,
+      file_url,
+      file_name,
+      copies: copies || 1,
+      color: color || "bw",
       status: "pending",
     });
 

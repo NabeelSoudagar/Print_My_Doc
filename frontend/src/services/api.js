@@ -1,12 +1,12 @@
 import axios from "axios";
 import { createClient } from "@supabase/supabase-js";
 
-// Supabase client for file storage
+// Supabase config
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
-// API base URL (backend)
+// Backend API
 const API = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api",
 });
@@ -18,25 +18,35 @@ export const deleteUser = (id) => API.delete(`/users/${id}`);
 export const loginUser = (credentials) => API.post("/users/login", credentials);
 
 // ---------------- ORDERS ----------------
-export const placeOrder = (formData) => {
+
+// Upload file → Supabase Storage
+export const uploadToSupabase = async (file) => {
+  const fileName = `${Date.now()}-${file.name}`;
+  const { data, error } = await supabase.storage
+    .from("documents")
+    .upload(fileName, file);
+
+  if (error) throw error;
+
+  // Get public URL
+  const { data: publicUrlData } = supabase.storage
+    .from("documents")
+    .getPublicUrl(fileName);
+
+  return publicUrlData.publicUrl;
+};
+
+// Place new order (save file URL + order data in DB via backend)
+export const placeOrder = async (orderData) => {
   const token = localStorage.getItem("token");
-  return API.post("/orders/upload", formData, {
+  return API.post("/orders", orderData, {
     headers: {
-      "Content-Type": "multipart/form-data",
       ...(token && { Authorization: `Bearer ${token}` }),
     },
   });
 };
 
-export const printDocument = (orderId) => {
-  const token = localStorage.getItem("token");
-  return API.post(`/orders/print/${orderId}`, {}, {
-    headers: {
-      ...(token && { Authorization: `Bearer ${token}` }),
-    },
-  });
-};
-
+// Get all orders
 export const getOrders = () => {
   const token = localStorage.getItem("token");
   return API.get("/orders", {
@@ -46,6 +56,7 @@ export const getOrders = () => {
   });
 };
 
+// Delete order
 export const deleteOrder = (id) => {
   const token = localStorage.getItem("token");
   return API.delete(`/orders/${id}`, {

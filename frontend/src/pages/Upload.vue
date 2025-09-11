@@ -35,10 +35,10 @@ export default {
           .upload(filePath, this.file, { cacheControl: "3600", upsert: false });
         if (error) throw error;
         // get public URL (if bucket public)
-        const { publicURL } = supabase.storage.from("documents").getPublicUrl(filePath);
+        const { data: { publicUrl } } = supabase.storage.from("documents").getPublicUrl(filePath);
         // send order metadata to backend
         const res = await placeOrder({
-          file_url: publicURL,
+          file_url: publicUrl,
           file_name: this.file.name,
           copies: this.copies,
           color: this.color

@@ -2,8 +2,8 @@ const express = require("express");
 const router = express.Router();
 const ordersController = require("../controllers/orders.controller");
 
-// Upload & create new order
-router.post("/upload", ordersController.createOrder);
+// Create new order
+router.post("/", ordersController.createOrder);
 
 // Get all orders
 router.get("/", ordersController.getOrders);
