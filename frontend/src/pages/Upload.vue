@@ -1,130 +1,54 @@
 <template>
-  <div class="upload-container">
-    <div class="upload-card">
-      <h1 class="title">📄 Upload & Print</h1>
-      <p class="subtitle">Upload your document and place an order instantly!</p>
-
-      <form @submit.prevent="submitOrder" class="upload-form">
-        <!-- File Upload -->
-        <label class="file-label">
-          <span>Choose Document</span>
-          <input type="file" @change="handleFileUpload" required />
-        </label>
-
-        <!-- Copies -->
-        <label>
-          Number of Copies
-          <input type="number" v-model="order.copies" min="1" required />
-        </label>
-
-        <!-- Print Type -->
-        <label>
-          Print Type
-          <select v-model="order.type">
-            <option value="bw">🖤 Black & White</option>
-            <option value="color">🌈 Color</option>
-          </select>
-        </label>
-
-        <!-- Binding Type -->
-        <label>
-          Binding Type
-          <select v-model="order.binding_type">
-            <option value="none">None</option>
-            <option value="staple">Staple</option>
-            <option value="glue">Glue</option>
-            <option value="spiral">Spiral</option>
-          </select>
-        </label>
-
-        <!-- Payment Method -->
-        <label>
-          Payment Method
-          <select v-model="order.payment_method">
-            <option value="cash_on_delivery">Cash on Delivery</option>
-          </select>
-        </label>
-
-        <!-- Delivery Address -->
-        <label class="add">
-          Delivery Address
-          <textarea v-model="order.delivery_address" placeholder="Enter your delivery address" required></textarea>
-        </label>
-
-        <!-- Order Now Button -->
-        <button type="submit" class="order-btn">
-          🖨️ Order Now
-        </button>
-
-        <!-- Print Button (after order) -->
-        <button v-if="orderId" type="button" @click="printOrder" class="print-btn">
-          🖨️ Print Document
-        </button>
-      </form>
-
-      <p v-if="message" class="message">{{ message }}</p>
-    </div>
+  <div class="form-wrapper">
+    <h2 class="form-title">📄 Upload Document</h2>
+    <form @submit.prevent="submitOrder" class="form">
+      <input type="file" @change="onFileChange" required />
+      <input v-model.number="copies" type="number" min="1" placeholder="Number of Copies" required />
+      <select v-model="color">
+        <option value="bw">B&W</option>
+        <option value="color">Color</option>
+      </select>
+      <button type="submit" :disabled="loading">{{ loading ? 'Uploading...' : 'Order Now' }}</button>
+    </form>
+    <p v-if="message" class="message">{{ message }}</p>
   </div>
 </template>
 
 <script>
-import { uploadDocument, printDocument } from "../services/api";
+import { supabase } from "../services/supabase";
+import { placeOrder } from "../services/api";
 
 export default {
   data() {
-    return {
-      file: null,
-      order: {
-        copies: 1,
-        type: "bw",
-        binding_type: "none",
-        payment_method: "cash_on_delivery",
-        delivery_address: ""
-      },
-      orderId: null,
-      message: ""
-    };
+    return { file: null, copies: 1, color: "bw", loading: false, message: "" };
   },
   methods: {
-    handleFileUpload(e) {
-      this.file = e.target.files[0];
-    },
+    onFileChange(e) { this.file = e.target.files[0]; },
     async submitOrder() {
-      if (!this.file) {
-        this.message = "⚠️ Please select a file first.";
-        return;
-      }
-
+      if (!this.file) { this.message = "Select file"; return; }
+      this.loading = true; this.message = "";
       try {
-        const formData = new FormData();
-        formData.append("file", this.file);
-        formData.append("copies", this.order.copies);
-        formData.append("type", this.order.type);
-        formData.append("binding_type", this.order.binding_type);
-        formData.append("delivery_address", this.order.delivery_address);
-
-        const response = await uploadDocument(formData);
-        this.orderId = response.data.order.id;
-        this.message = "✅ Order placed successfully!";
-        this.file = null;
-        this.order = { copies: 1, type: "bw", binding_type: "none", payment_method: "cash_on_delivery", delivery_address: "" };
+        const filePath = `${Date.now()}_${this.file.name}`;
+        // upload to public bucket 'documents' (must exist)
+        const { data, error } = await supabase.storage
+          .from("documents")
+          .upload(filePath, this.file, { cacheControl: "3600", upsert: false });
+        if (error) throw error;
+        // get public URL (if bucket public)
+        const { publicURL } = supabase.storage.from("documents").getPublicUrl(filePath);
+        // send order metadata to backend
+        const res = await placeOrder({
+          file_url: publicURL,
+          file_name: this.file.name,
+          copies: this.copies,
+          color: this.color
+        });
+        this.message = "Order placed!";
       } catch (err) {
         console.error(err);
-        this.message = "❌ Failed to place order.";
-      }
-    },
-    async printOrder() {
-      if (!this.orderId) {
-        this.message = "⚠️ No order to print.";
-        return;
-      }
-
-      try {
-        await printDocument(this.orderId);
-        this.message = "✅ Document sent to printer!";
-      } catch (err) {
-        console.error(err);
-        this.message = "❌ Failed to print document.";
+        this.message = err.message || "Upload failed";
+      } finally {
+        this.loading = false;
       }
     }
   }
@@ -132,91 +56,80 @@ export default {
 </script>
 
 <style scoped>
-.upload-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #74ebd5 0%, #9face6 100%);
-  animation: fadeIn 1s ease-in-out;
-}
-
-.upload-card {
-  background: white;
+/* Wrapper */
+.form-wrapper {
+  max-width: 400px;
+  margin: 2rem auto;
   padding: 2rem;
-  border-radius: 15px;
-  width: 100%;
-  max-width: 450px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
   text-align: center;
-  transform: scale(0.95);
-  animation: zoomIn 0.5s forwards;
+  animation: fadeIn 0.8s ease-in-out;
 }
 
-.title {
-  font-size: 1.8rem;
-  margin-bottom: 0.5rem;
-}
-
-.subtitle {
+.form-title {
   margin-bottom: 1.5rem;
-  color: #555;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #007bff;
 }
 
-.upload-form {
+/* Form */
+.form {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
-.upload-form input,
-.upload-form select {
-  padding: 0.7rem;
-  border: 1px solid #ccc;
+.form input,
+.form select {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
   border-radius: 8px;
-  transition: border-color 0.3s;
+  font-size: 1rem;
+  transition: all 0.3s ease;
 }
 
-.upload-form input:focus,
-.upload-form select:focus {
+.form input:focus,
+.form select:focus {
   border-color: #007bff;
-  outline: none;
+  box-shadow: 0 0 8px rgba(0, 123, 255, 0.3);
+  transform: translateY(-2px);
 }
 
-.file-label {
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  gap: .3rem;
-}
-
-
-.order-btn {
-  padding: 0.8rem;
-  background: #007bff;
+.form button {
+  padding: 0.9rem;
+  background: linear-gradient(135deg, #007bff, #00c6ff);
   color: white;
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  transition: 0.3s ease-in-out;
+  font-weight: bold;
+  transition: all 0.3s ease;
 }
 
-.order-btn:hover {
-  background: #0056b3;
-  transform: translateY(-2px);
+.form button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0056b3, #00a6d6);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 
+.form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Message */
 .message {
   margin-top: 1rem;
   font-weight: bold;
+  animation: fadeIn 0.5s;
 }
 
+/* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes zoomIn {
-  to { transform: scale(1); }
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>
