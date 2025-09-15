@@ -16,6 +16,12 @@ app.use(express.json());
 app.use("/api/users", userRoutes);
 app.use("/api/orders", orderRoutes);
 
+app.use(cors({
+  origin: "https://print-my-doc.vercel.app",  // your frontend domain
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
+
 // Connect DB and Start Server
 sequelize
   .sync()
