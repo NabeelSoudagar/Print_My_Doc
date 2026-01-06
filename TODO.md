@@ -1,0 +1,2 @@
+- [x] Create Footer.vue component in frontend/src/components/
+- [x] Update App.vue to import and render Footer component
